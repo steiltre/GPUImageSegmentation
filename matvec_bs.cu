@@ -72,7 +72,6 @@ __global__ void vector_mul(float *d_NNZ_values, float *d_expanded_vec, float* d_
 int
 main(int argc, char* argv[])
 {
-    // Error code to check return values for CUDA calls
     int dim = atoi(argv[1]),NNZ = dim*2;
     // Allocate the host Arrays
     float *h_NNZ_values = (float *)malloc(sizeof(unsigned)*NNZ);
@@ -103,7 +102,6 @@ main(int argc, char* argv[])
             h_flags[i] = 0;
         }
     }
-    //h_flags[NNZ-1]=1;
     printf("Done setting up Host arrays\n");
     // Allocate the device arrays
     float *d_NNZ_values,*d_vec, *d_expanded_vec,*d_scanned_vec;
