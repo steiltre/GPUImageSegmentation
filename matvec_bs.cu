@@ -65,6 +65,16 @@ __global__ void vector_mul(float *d_NNZ_values, float *d_expanded_vec, float* d_
     */
 }
 
+void matvec(const CUDPPHandle scanplan, float *d_NNZ_values, float *d_vec, unsigned *d_indices, unsigned *d_rindices, unsigned *d_flags, float* d_scanned_vec, float* d_expanded_vec,int NNZ, int dim){
+    int threadsPerBlock = 256;
+    int blocksPerGrid =(NNZ + threadsPerBlock - 1) / threadsPerBlock;
+    printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
+    expand_vector<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_vec, d_indices, d_expanded_vec, NNZ, dim);
+    vector_mul<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_expanded_vec, d_vec, NNZ, dim);
+    cudppSegmentedScan(scanplan,d_scanned_vec,d_expanded_vec,d_flags,NNZ);
+    extract_vector<<<blocksPerGrid, threadsPerBlock>>>(d_scanned_vec, d_vec, d_rindices, dim);
+}
+
 
 /**
  * Host main routine
@@ -124,9 +134,6 @@ main(int argc, char* argv[])
     cudaMemcpy(d_rindices, h_rindices, sizeof(unsigned)*dim, cudaMemcpyHostToDevice);
 
     // Launch the Vector Add CUDA Kernel
-    int threadsPerBlock = 256;
-    int blocksPerGrid =(NNZ + threadsPerBlock - 1) / threadsPerBlock;
-    printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
     CUDPPHandle theCudpp;
     cudppCreate(&theCudpp);
@@ -136,17 +143,15 @@ main(int argc, char* argv[])
     config.datatype = CUDPP_FLOAT;
     config.algorithm = CUDPP_SEGMENTED_SCAN;
     config.options = CUDPP_OPTION_FORWARD | CUDPP_OPTION_INCLUSIVE;
-    
+
     CUDPPHandle scanplan = 0;
-    CUDPPResult res = cudppPlan(theCudpp, &scanplan, config, NNZ, 1, 0);  
+    CUDPPResult res = cudppPlan(theCudpp, &scanplan, config, NNZ, 1, 0);
+
 
 
     cudaEventCreate(&start);
     cudaEventRecord(start,0);
-    expand_vector<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_vec, d_indices, d_expanded_vec, NNZ, dim);
-    vector_mul<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_expanded_vec, d_vec, NNZ, dim);
-    cudppSegmentedScan(scanplan,d_scanned_vec,d_expanded_vec,d_flags,NNZ);
-    extract_vector<<<blocksPerGrid, threadsPerBlock>>>(d_scanned_vec, d_vec, d_rindices, dim);
+    matvec(scanplan, d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
     cudaEventCreate(&stop);
     cudaEventRecord(stop,0);
     cudaEventSynchronize(stop);
