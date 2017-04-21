@@ -47,8 +47,6 @@ __global__ void extract_vector(float *d_expanded_vec, float *d_vec, unsigned *d_
 
     if (i < dim){
         d_vec[i] = d_expanded_vec[d_rindices[i]-1];
-        //d_expanded_vec[i] = d_vec[i%2];
-        //d_expanded_vec[i] = d_NNZ_values[i]*d_expanded_vec[i];
     }
 }
 __global__ void vector_mul(float *d_NNZ_values, float *d_expanded_vec, float* d_vec,int NNZ, int dim){
@@ -57,21 +55,20 @@ __global__ void vector_mul(float *d_NNZ_values, float *d_expanded_vec, float* d_
     if (i < NNZ){
         d_expanded_vec[i] = d_NNZ_values[i]*d_expanded_vec[i];
     }
-    /*
-    __syncthreads();
-    if (i < dim){
-        d_vec[i] = d_expanded_vec[2*i] + d_expanded_vec[2*i + 1];
-    }
-    */
 }
 
 void matvec(const CUDPPHandle scanplan, float *d_NNZ_values, float *d_vec, unsigned *d_indices, unsigned *d_rindices, unsigned *d_flags, float* d_scanned_vec, float* d_expanded_vec,int NNZ, int dim){
+    
     int threadsPerBlock = 256;
     int blocksPerGrid =(NNZ + threadsPerBlock - 1) / threadsPerBlock;
-    printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
+    //printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
+    
     expand_vector<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_vec, d_indices, d_expanded_vec, NNZ, dim);
+    
     vector_mul<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_expanded_vec, d_vec, NNZ, dim);
+    
     cudppSegmentedScan(scanplan,d_scanned_vec,d_expanded_vec,d_flags,NNZ);
+    
     extract_vector<<<blocksPerGrid, threadsPerBlock>>>(d_scanned_vec, d_vec, d_rindices, dim);
 }
 
@@ -124,7 +121,6 @@ main(int argc, char* argv[])
     cudaMalloc((void **)&d_flags, sizeof(unsigned)*NNZ);
     cudaMalloc((void **)&d_expanded_vec, sizeof(float)*NNZ);
     cudaMalloc((void **)&d_scanned_vec, sizeof(float)*NNZ);
-    //printf("Done allocating up device arrays\n");
     // Copy the host input vectors A and B in host memory to the device input vectors in
     // device memory
     cudaMemcpy(d_NNZ_values, h_NNZ_values, sizeof(float)*NNZ, cudaMemcpyHostToDevice);
@@ -146,25 +142,23 @@ main(int argc, char* argv[])
 
     CUDPPHandle scanplan = 0;
     CUDPPResult res = cudppPlan(theCudpp, &scanplan, config, NNZ, 1, 0);
-
-
-
     cudaEventCreate(&start);
     cudaEventRecord(start,0);
-    matvec(scanplan, d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
+    matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
+    matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
+    matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
     cudaEventCreate(&stop);
     cudaEventRecord(stop,0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsedTime, start,stop);
     // Copy the device result vector in device memory to the host result vector
     // in host memory.
-    //gettimeofday(&e,NULL);
-    //timersub(&e, &s, &time_diff);
-    //printf("Time to expand = %lf\n",time_diff.tv_usec*(1.0/1000000)+time_diff.tv_sec);
     cudaMemcpy(h_scanned_vec, d_scanned_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_expanded_vec, d_expanded_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
-    printf("Elapsed time : %f s\n" ,elapsedTime*0.001);
+    printf("Elapsed time : %f ms\n" ,elapsedTime);
+    printf("Seems to be %f GFlops\n",((3*NNZ)*3*0.000000001)/(elapsedTime*0.001));
+    /*
     for (int i = 0; i < dim; ++i){
         printf("%d --- %f\n",h_rindices[i],h_vec[i]);
     }
@@ -172,6 +166,7 @@ main(int argc, char* argv[])
     for (int i = 0; i < NNZ; ++i){
         printf("%d %f - %f :: %f --- %d\n",h_indices[i],h_NNZ_values[i],h_expanded_vec[i],h_scanned_vec[i], h_flags[i]);
     }
+    */
     res = cudppDestroyPlan(scanplan);
     cudppDestroy(theCudpp);
     // Free device global memory
@@ -192,7 +187,6 @@ main(int argc, char* argv[])
     free(h_expanded_vec);
     free(h_scanned_vec);
 
-    printf("Done\n");
     return 0;
 }
 
