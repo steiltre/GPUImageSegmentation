@@ -35,37 +35,46 @@
 __global__ void expand_vector(float *d_NNZ_values, float *d_vec, unsigned *d_indices, float* d_expanded_vec,int NNZ, int dim){
     int i = blockDim.x * blockIdx.x + threadIdx.x;
 
-    if (i < NNZ){
+    while(i < NNZ){
         d_expanded_vec[i] = d_vec[d_indices[i]];
-        //d_expanded_vec[i] = d_vec[i%2];
-        //d_expanded_vec[i] = d_NNZ_values[i]*d_expanded_vec[i];
+        i += blockDim.x*gridDim.x;
     }
+    __syncthreads();
+    i = blockDim.x * blockIdx.x + threadIdx.x;
+    while(i < NNZ){
+        d_expanded_vec[i] = d_NNZ_values[i]*d_expanded_vec[i];
+        i += blockDim.x*gridDim.x;
+    }
+
 }
 
 __global__ void extract_vector(float *d_expanded_vec, float *d_vec, unsigned *d_rindices, int dim){
     int i = blockDim.x * blockIdx.x + threadIdx.x;
 
-    if (i < dim){
+    while(i < dim){
         d_vec[i] = d_expanded_vec[d_rindices[i]-1];
+        i += blockDim.x*gridDim.x;
     }
 }
 __global__ void vector_mul(float *d_NNZ_values, float *d_expanded_vec, float* d_vec,int NNZ, int dim){
     int i = blockDim.x * blockIdx.x + threadIdx.x;
 
-    if (i < NNZ){
+    while(i < NNZ){
         d_expanded_vec[i] = d_NNZ_values[i]*d_expanded_vec[i];
+        i += blockDim.x*gridDim.x;
     }
 }
 
 void matvec(const CUDPPHandle scanplan, float *d_NNZ_values, float *d_vec, unsigned *d_indices, unsigned *d_rindices, unsigned *d_flags, float* d_scanned_vec, float* d_expanded_vec,int NNZ, int dim){
     
     int threadsPerBlock = 256;
-    int blocksPerGrid =(NNZ + threadsPerBlock - 1) / threadsPerBlock;
+    //int blocksPerGrid =(NNZ + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid = 4096;
     //printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
     
     expand_vector<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_vec, d_indices, d_expanded_vec, NNZ, dim);
     
-    vector_mul<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_expanded_vec, d_vec, NNZ, dim);
+    //vector_mul<<<blocksPerGrid, threadsPerBlock>>>(d_NNZ_values, d_expanded_vec, d_vec, NNZ, dim);
     
     cudppSegmentedScan(scanplan,d_scanned_vec,d_expanded_vec,d_flags,NNZ);
     
@@ -79,7 +88,7 @@ void matvec(const CUDPPHandle scanplan, float *d_NNZ_values, float *d_vec, unsig
 int
 main(int argc, char* argv[])
 {
-    int dim = atoi(argv[1]),NNZ = dim*2;
+    int dim = atoi(argv[1]),NNZ = dim;
     // Allocate the host Arrays
     float *h_NNZ_values = (float *)malloc(sizeof(unsigned)*NNZ);
     unsigned *h_indices = (unsigned *)malloc(sizeof(unsigned)*NNZ);
@@ -95,23 +104,19 @@ main(int argc, char* argv[])
 
     // Initialize the host input vectors
     for (int i = 0; i < dim; ++i){
-        h_vec[i] = rand()/(float)RAND_MAX;
-        h_rindices[i] = 2*(i+1);
+        h_vec[i] = 1.0;
+        //printf("%f\n",h_vec[i]);
+        h_rindices[i] = (i+1);
     }
-    for (int i = 0; i < NNZ; ++i){
-        h_NNZ_values[i] = rand()/(float)RAND_MAX;
-        if(i%2 == 0){
-            h_indices[i] = 0;
-            h_flags[i] = 1;
-        } 
-        if(i%2 == 1){
-            h_indices[i] = 1;
-            h_flags[i] = 0;
-        }
+    for (int i = 0; i < dim; ++i){
+        h_NNZ_values[i] = 1.0;
+        h_indices[i] = i;
+        h_flags[i] = 1;
     }
+    h_NNZ_values[0] = 4.0;
     printf("Done setting up Host arrays\n");
     // Allocate the device arrays
-    float *d_NNZ_values,*d_vec, *d_expanded_vec,*d_scanned_vec;
+    float *d_NNZ_values,*d_vec, *d_expanded_vec,*d_scanned_vec, *d_norm;
     unsigned *d_indices,*d_flags,*d_rindices;
     
     cudaMalloc((void **)&d_NNZ_values, sizeof(float)*NNZ);
@@ -121,6 +126,7 @@ main(int argc, char* argv[])
     cudaMalloc((void **)&d_flags, sizeof(unsigned)*NNZ);
     cudaMalloc((void **)&d_expanded_vec, sizeof(float)*NNZ);
     cudaMalloc((void **)&d_scanned_vec, sizeof(float)*NNZ);
+    cudaMalloc((void **)&d_norm, sizeof(float));
     // Copy the host input vectors A and B in host memory to the device input vectors in
     // device memory
     cudaMemcpy(d_NNZ_values, h_NNZ_values, sizeof(float)*NNZ, cudaMemcpyHostToDevice);
@@ -144,27 +150,28 @@ main(int argc, char* argv[])
     CUDPPResult res = cudppPlan(theCudpp, &scanplan, config, NNZ, 1, 0);
     cudaEventCreate(&start);
     cudaEventRecord(start,0);
+
     matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
-    matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
-    matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
+
     cudaEventCreate(&stop);
     cudaEventRecord(stop,0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsedTime, start,stop);
+    printf("Elapsed time : %f ms\n" ,elapsedTime);
+    printf("Seems to be %f GFlops\n",((3*NNZ)*3*0.000000001)/(elapsedTime*0.001));
+
     // Copy the device result vector in device memory to the host result vector
     // in host memory.
     cudaMemcpy(h_scanned_vec, d_scanned_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_expanded_vec, d_expanded_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
-    printf("Elapsed time : %f ms\n" ,elapsedTime);
-    printf("Seems to be %f GFlops\n",((3*NNZ)*3*0.000000001)/(elapsedTime*0.001));
     /*
     for (int i = 0; i < dim; ++i){
         printf("%d --- %f\n",h_rindices[i],h_vec[i]);
     }
     printf("---------------------\n");
     for (int i = 0; i < NNZ; ++i){
-        printf("%d %f - %f :: %f --- %d\n",h_indices[i],h_NNZ_values[i],h_expanded_vec[i],h_scanned_vec[i], h_flags[i]);
+        //printf("%d %f - %f :: %f --- %d\n",h_indices[i],h_NNZ_values[i],h_expanded_vec[i],h_scanned_vec[i], h_flags[i]);
     }
     */
     res = cudppDestroyPlan(scanplan);
@@ -175,6 +182,7 @@ main(int argc, char* argv[])
     cudaFree(d_rindices);
     cudaFree(d_vec);
     cudaFree(d_flags);
+    cudaFree(d_norm);
     cudaFree(d_expanded_vec);
     cudaFree(d_scanned_vec);
 
