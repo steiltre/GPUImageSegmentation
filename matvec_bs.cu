@@ -34,15 +34,24 @@
  */
 __global__ void expand_vector(float *d_NNZ_values, float *d_vec, unsigned *d_indices, float* d_expanded_vec,int NNZ, int dim){
     int i = blockDim.x * blockIdx.x + threadIdx.x;
+    __shared__ float d_expanded_vec_shared[256];
+    __shared__ float d_NNZ_values_shared[256];
 
     while(i < NNZ){
-        d_expanded_vec[i] = d_vec[d_indices[i]];
+        d_expanded_vec_shared[i%256] = d_vec[d_indices[i]];
+        d_NNZ_values_shared[i%256] = d_NNZ_values[i];
         i += blockDim.x*gridDim.x;
     }
     __syncthreads();
     i = blockDim.x * blockIdx.x + threadIdx.x;
     while(i < NNZ){
-        d_expanded_vec[i] = d_NNZ_values[i]*d_expanded_vec[i];
+        d_expanded_vec_shared[i%256] = d_NNZ_values_shared[i%256]*d_expanded_vec_shared[i%256];
+        i += blockDim.x*gridDim.x;
+    }
+    __syncthreads();
+    i = blockDim.x * blockIdx.x + threadIdx.x;
+    while(i < NNZ){
+        d_expanded_vec[i] = d_expanded_vec_shared[i%256];
         i += blockDim.x*gridDim.x;
     }
 
@@ -113,7 +122,6 @@ main(int argc, char* argv[])
         h_indices[i] = i;
         h_flags[i] = 1;
     }
-    h_NNZ_values[0] = 4.0;
     printf("Done setting up Host arrays\n");
     // Allocate the device arrays
     float *d_NNZ_values,*d_vec, *d_expanded_vec,*d_scanned_vec, *d_norm;
@@ -165,7 +173,7 @@ main(int argc, char* argv[])
     cudaMemcpy(h_scanned_vec, d_scanned_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_expanded_vec, d_expanded_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
-    /*
+/*
     for (int i = 0; i < dim; ++i){
         printf("%d --- %f\n",h_rindices[i],h_vec[i]);
     }
