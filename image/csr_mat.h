@@ -1,22 +1,27 @@
 #ifndef CSR_H
 #define CSR_H
 
+
+
 /**
  * @brief Structure for compressed sparse row format
  */
 typedef struct
 {
   /** Pointer to beginning or rows */
-  int * ptr;
+  unsigned * ptr;
 
   /** Column indices */
-  int * cols;
+  unsigned * cols;
 
   /** Matrix values */
   float * vals;
-
+  /* Flags for segmented scan*/
+  unsigned *flags;
   /** Number of nonzeros */
   int nnz;
+  /* Dim of matrix*/
+  int rows;
 } csr_mat;
 
 /**
