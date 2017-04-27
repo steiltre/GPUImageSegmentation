@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "csr_mat.h"
+#include "diag_mat.h"
 
 /**
 * @brief A structure representing an RGB image. Pixels are stored row-major.
@@ -34,7 +35,20 @@ image_t * grayscale(
  *
  * @return Weight matrix stored in compressed sparse row format
  */
-csr_mat * create_weight(
+csr_mat * create_weight_csr(
+    image_t const * const image,
+    float radius);
+
+
+/**
+ * @brief Create the weight matrix from an image
+ *
+ * @param image The image to create matrix from
+ * @param radius Cutoff used for adjacency
+ *
+ * @return Weight matrix stored in diagonal format
+ */
+diag_mat * create_weight_diag(
     image_t const * const image,
     float radius);
 

@@ -18,3 +18,12 @@ csr_mat * csr_alloc(
 
   return csr;
 }
+
+void csr_free(
+    csr_mat * mat)
+{
+  free(mat->ptr);
+  free(mat->cols);
+  free(mat->vals);
+  free(mat);
+}

@@ -1,0 +1,2 @@
+# Exclude .out files
+*.out
