@@ -202,10 +202,7 @@ int main(int argc, char* argv[])
     // Allocate the device arrays
     eigenvalue_solver(h_matrix,h_vec);
     // Free host memory
-    free(h_matrix->vals);
-    free(h_matrix->cols);
-    free(h_matrix->ptr);
-    free(h_matrix->flags);
+    csr_free(h_matrix);
 
     free(h_vec);
 

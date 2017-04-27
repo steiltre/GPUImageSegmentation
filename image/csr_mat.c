@@ -26,5 +26,6 @@ void csr_free(
   free(mat->ptr);
   free(mat->cols);
   free(mat->vals);
+  free(mat->flags);
   free(mat);
 }
