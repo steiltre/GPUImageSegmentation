@@ -2,6 +2,7 @@
 
 #include "image.h"
 #include "csr_mat.h"
+#include "diag_mat.h"
 
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -111,13 +112,13 @@ image_t * grayscale(
 }
 
 
-csr_mat * create_weight(
+csr_mat * create_weight_csr(
     image_t const * const image,
     float radius)
 {
 
   /* Create sparse matrix assuming all pixels have 4 * radius^2 neighbors (overestimate, may want to fix later) */
-  csr_mat * wgt = csr_alloc( image->height * image->width * 4 * radius * radius, image->height * image->width );
+  csr_mat * wgt = csr_alloc( image->height * image->width * (2*radius+1) * (2*radius+1), image->height * image->width );
 
   /* Need to calculate variances */
   float avg_bright = 0;
@@ -197,6 +198,109 @@ csr_mat * create_weight(
     for (int nbr=wgt->ptr[k]; nbr < wgt->ptr[k+1]; nbr++) {
       if (wgt->cols[nbr] != k) {
         wgt->vals[nbr] = wgt->vals[nbr] * norm;
+      }
+    }
+  }
+
+  return wgt;
+
+}
+
+diag_mat * create_weight_diag(
+    image_t const * const image,
+    float radius)
+{
+  /* Note: This uses L^1 distance when finding neighbors, not L^2. This makes diagonal structure simpler, but results will not be the same as create_weight_csr. */
+  unsigned ndiags;
+  int eff_radius = (int) floor(radius);
+
+  ndiags = 2 * eff_radius * eff_radius + 2 * eff_radius + 1;  /* Solve recurrence for number of neighbors within L^1 distance radius to get this */
+
+  /* Create sparse matrix assuming all pixels have 4 * radius^2 neighbors (overestimate, may want to fix later) */
+  diag_mat * wgt = diag_alloc( image->height * image->width * (2*radius+1) * (2*radius+1), ndiags, image->width, image->height );
+
+  /* Need to calculate variances */
+  float avg_bright = 0;
+  float var_bright;
+  float avg_x = (image->width-1)/2;
+  float avg_y = (image->height-1)/2;
+  float var_space;
+
+  for (int i=0; i<image->height; i++) {
+    for (int j=0; j<image->width; j++) {
+      avg_bright += image->red[i*image->width + j];
+    }
+  }
+
+  avg_bright = avg_bright / (image->height * image->width);
+
+  for (int i=0; i<image->height; i++) {
+    for (int j=0; j<image->width; j++) {
+      var_bright += (image->red[i*image->width + j] - avg_bright) * (image->red[i*image->width + j] - avg_bright);
+      var_space += (i - avg_y) * (i - avg_y) + (j - avg_x) * (j - avg_x);
+    }
+  }
+
+  var_bright = var_bright / (image->height * image->width);
+  var_space = var_space / (image->height * image->width);
+
+  /* Determine offsets to use */
+  unsigned ind = 0;
+  for (int i=-1*eff_radius; i<=eff_radius; i++) {
+    for (int j = abs(i)-eff_radius; j <= eff_radius - abs(i); j++) {
+      wgt->offset[ind++] = i * wgt->width + j;
+    }
+  }
+
+  /* Loop over all neighbors of all pixels and determine weight */
+  for (int i=0; i<image->height; i++) {
+    for (int j=0; j<image->width; j++) {
+
+      float brightness = image->red[i*image->width + j];
+
+      ind = 0;
+      /* Loop over all possible offset values */
+      for (int row_disp=-1*eff_radius; row_disp<=eff_radius; row_disp++) {
+        for (int col_disp = abs(row_disp)-eff_radius; col_disp <= eff_radius - abs(row_disp); col_disp++) {
+          float dist2 = (row_disp)*(row_disp) + (col_disp)*(col_disp);
+
+          if (i+row_disp >= 0 && i+row_disp < image->height && j+col_disp >= 0 && j+col_disp < image->width) {  /* Neighbor pixel is inside image */
+            if ( row_disp != 0 || col_disp != 0 ) {  /* Handle pixel as its own neighbor separately */
+              wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = -1 * exp( -1 * dist2/var_space - ( brightness - image->red[(i+row_disp)*image->width + j+col_disp] ) * (brightness - image->red[(i+row_disp)*image->width + j+col_disp] )/var_bright );
+              //wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = (i+row_disp)*image->width + j+col_disp;
+              wgt->nnz += 1;
+            }
+            else {
+              wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = 1;
+              wgt->nnz += 1;
+            }
+          }
+          else {  /* Neighbor pixel outside of image */
+            wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = 0;
+          }
+
+          ind++;
+        }
+      }
+    }
+  }
+
+  float sum;
+
+  /* Divide off-diagonals to sum to 1 */
+  for (int i=0; i<image->height; i++) {
+    for (int j=0; j<image->width; j++) {
+      sum = 0;
+      for (int k=0; k<ndiags; k++) {  /* Compute row sum */
+        if (wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] != 1) {  /* Don't include 1's on main diagonal */
+          sum += wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j];
+        }
+      }
+
+      for (int k=0; k<ndiags; k++) {  /* Normalize*/
+        if (wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] != 1) {  /* Don't include 1's on main diagonal */
+          wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] = -1 * wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] / sum;
+        }
       }
     }
   }

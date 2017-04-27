@@ -36,4 +36,12 @@ csr_mat * csr_alloc(
     int max_nnz,
     int rows);
 
+/**
+ * @brief Free memory from csr matrix
+ *
+ * @param mat Matrix to free
+ */
+void csr_free(
+    csr_mat * mat);
+
 #endif
