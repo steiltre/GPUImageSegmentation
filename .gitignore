@@ -1,2 +1,5 @@
 # Exclude .out files
 *.out
+
+# Exclude test binaries
+*/test
