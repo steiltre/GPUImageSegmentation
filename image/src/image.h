@@ -37,7 +37,8 @@ image_t * grayscale(
  */
 csr_mat * create_weight_csr(
     image_t const * const image,
-    float radius);
+    float radius,
+    csr_mat * diag);
 
 
 /**

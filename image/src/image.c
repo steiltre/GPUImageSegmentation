@@ -114,7 +114,8 @@ image_t * grayscale(
 
 csr_mat * create_weight_csr(
     image_t const * const image,
-    float radius)
+    float radius,
+    csr_mat * diag)
 {
 
   /* Create sparse matrix assuming all pixels have 4 * radius^2 neighbors (overestimate, may want to fix later) */
@@ -122,10 +123,10 @@ csr_mat * create_weight_csr(
 
   /* Need to calculate variances */
   float avg_bright = 0;
-  float var_bright;
+  float var_bright = 0;
   float avg_x = (image->width-1)/2;
   float avg_y = (image->height-1)/2;
-  float var_space;
+  float var_space = 0;
 
   for (int i=0; i<image->height; i++) {
     for (int j=0; j<image->width; j++) {
@@ -145,6 +146,8 @@ csr_mat * create_weight_csr(
   var_bright = var_bright / (image->height * image->width);
   var_space = var_space / (image->height * image->width);
 
+  //var_space = 2 * radius * radius / 25;
+  //var_bright = 0.2 * 0.2;
 
   int ind = 0;
 
@@ -167,7 +170,7 @@ csr_mat * create_weight_csr(
               //wgt->vals[ind] = -1 * exp( -1 * ( brightness - image->red[row*image->width + col] ) * (brightness - image->red[row*image->width + col] )/var_bright );
             }
             else {
-              wgt->vals[ind] = 1;
+              wgt->vals[ind] = 1;  // Placeholder for sum of off-diagonals
             }
             wgt->cols[ind] = row*image->width + col;
             ind++;
@@ -182,6 +185,7 @@ csr_mat * create_weight_csr(
 
   float sum;
   float norm;
+  ind = 0;
   /* Normalize so row sums are zero */
   for (int k=0; k<image->height*image->width; k++) {
 
@@ -193,11 +197,12 @@ csr_mat * create_weight_csr(
     }
 
     sum -= 1;  /* Counted diagonal entry in sum */
-    norm = -1.0/sum;
 
     for (int nbr=wgt->ptr[k]; nbr < wgt->ptr[k+1]; nbr++) {
-      if (wgt->cols[nbr] != k) {
-        wgt->vals[nbr] = wgt->vals[nbr] * norm;
+      if (wgt->cols[nbr] == k) {
+        wgt->vals[nbr] = -1 * sum;
+        diag->cols[ind] = k;
+        diag->vals[ind++] = -1 * sum;
       }
     }
   }
@@ -271,7 +276,7 @@ diag_mat * create_weight_diag(
               wgt->nnz += 1;
             }
             else {
-              wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = 1;
+              wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = 1;  /* Placeholder for sum of off-diagonals */
               wgt->nnz += 1;
             }
           }
@@ -292,14 +297,14 @@ diag_mat * create_weight_diag(
     for (int j=0; j<image->width; j++) {
       sum = 0;
       for (int k=0; k<ndiags; k++) {  /* Compute row sum */
-        if (wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] != 1) {  /* Don't include 1's on main diagonal */
+        if ( k != (k-1)/2) {  /* Don't include 1's on main diagonal */
           sum += wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j];
         }
       }
 
       for (int k=0; k<ndiags; k++) {  /* Normalize*/
-        if (wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] != 1) {  /* Don't include 1's on main diagonal */
-          wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] = -1 * wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] / sum;
+        if ( (k-1)/2 ) {  /* Change diagonal to sum of off diagonals */
+          wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] = -1 * sum;
         }
       }
     }
