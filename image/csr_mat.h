@@ -20,6 +20,8 @@ typedef struct
   unsigned *flags;
   /** Number of nonzeros */
   int nnz;
+
+  int max_nnz;
   /* Dim of matrix*/
   int rows;
 } csr_mat;
@@ -33,7 +35,7 @@ typedef struct
  * @return Initialized csr matrix
  */
 csr_mat * csr_alloc(
-    int max_nnz,
+    int nnz,
     int rows);
 
 /**

@@ -16,7 +16,7 @@ csr_mat * csr_alloc(
   csr->flags = malloc( max_nnz * sizeof(*(csr->flags)) );
   csr->nnz = max_nnz;
   csr->rows = rows;
-
+  csr->max_nnz = 0;
   return csr;
 }
 
