@@ -22,7 +22,7 @@
 // For the CUDA runtime routines (prefixed with "cuda_")
 #include <sys/time.h>
 extern "C" {
-    #include "csr_mat.h"
+    #include "./src/csr_mat.h"
 }
 
 __global__ void expand_vector(float *d_NNZ_values, float *d_vec, unsigned *d_indices, float* d_expanded_vec,int NNZ, int dim){
@@ -208,6 +208,168 @@ __global__ void reduce6(T *g_idata, T *g_odata, unsigned int n)
     }
 } 
 
+__global__ void power_iteration(float *d_NNZ_values, float *d_vec, unsigned *d_indices, unsigned *d_rindices, float* d_expanded_vec,float *d_norm,int NNZ, int dim, bool nIsPow2, int blockSize){
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    __shared__ float d_expanded_vec_shared[256];
+    __shared__ float d_NNZ_values_shared[256];
+
+    while(i < NNZ){
+        d_expanded_vec_shared[i%256] = d_vec[d_indices[i]];
+        d_NNZ_values_shared[i%256] = d_NNZ_values[i];
+        //d_expanded_vec[i] = d_vec[d_indices[i]];
+        //d_NNZ_values[i] = d_NNZ_values[i];
+        i += blockDim.x*gridDim.x;
+    }
+    __syncthreads();
+    i = blockDim.x * blockIdx.x + threadIdx.x;
+    while(i < NNZ){
+        d_expanded_vec_shared[i%256] = d_NNZ_values_shared[i%256]*d_expanded_vec_shared[i%256];
+        //d_expanded_vec[i] *= d_NNZ_values[i];
+        i += blockDim.x*gridDim.x;
+    }
+    __syncthreads();
+    i = blockDim.x * blockIdx.x + threadIdx.x;
+    while(i < NNZ){
+        d_expanded_vec[i] = d_expanded_vec_shared[i%256];
+        i += blockDim.x*gridDim.x;
+    }
+
+    i = blockDim.x * blockIdx.x + threadIdx.x;
+    while(i < dim){
+        
+        if(i == 0){
+            for(int j = 0; j <= d_rindices[1]; j++ ){
+                d_vec[i] += d_expanded_vec[j]; 
+            }
+        }
+        else{
+            for(int j = d_rindices[i-1]; j <= d_rindices[i]; j++ ){
+                d_vec[i] += d_expanded_vec[j]; 
+            }
+        }
+        i += blockDim.x*gridDim.x;
+    }
+    __syncthreads();
+
+    float *sdata = SharedMemory<float>();
+
+    // perform first level of reduction,
+    // reading from global memory, writing to shared memory
+    unsigned int tid = threadIdx.x;
+    i = blockIdx.x*blockSize*2 + threadIdx.x;
+    unsigned int gridSize = blockSize*2*gridDim.x;
+
+    float mySum = 0;
+
+    // we reduce multiple elements per thread.  The number is determined by the
+    // number of active thread blocks (via gridDim).  More blocks will result
+    // in a larger gridSize and therefore fewer elements per thread
+    while (i < dim)
+    {
+        mySum += d_vec[i]*d_vec[i];
+
+        // ensure we don't read out of bounds -- this is optimized away for powerOf2 sized arrays
+        if (nIsPow2 || i + blockSize < dim)
+            mySum += d_vec[i+blockSize]*d_vec[i+blockSize];
+
+        i += gridSize;
+    }
+
+    // each thread puts its local sum into shared memory
+    sdata[tid] = mySum;
+    __syncthreads();
+
+
+    // do reduction in shared mem
+    if ((blockSize >= 512) && (tid < 256))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid + 256];
+    }
+
+    __syncthreads();
+
+    if ((blockSize >= 256) &&(tid < 128))
+    {
+            sdata[tid] = mySum = mySum + sdata[tid + 128];
+    }
+
+     __syncthreads();
+
+    if ((blockSize >= 128) && (tid <  64))
+    {
+       sdata[tid] = mySum = mySum + sdata[tid +  64];
+    }
+
+    __syncthreads();
+
+#if (__CUDA_ARCH__ >= 300 )
+    if ( tid < 32 )
+    {
+        // Fetch final intermediate sum from 2nd warp
+        if (blockSize >=  64) mySum += sdata[tid + 32];
+        // Reduce final warp using shuffle
+        for (int offset = warpSize/2; offset > 0; offset /= 2) 
+        {
+            mySum += __shfl_down(mySum, offset);
+        }
+    }
+#else
+    // fully unroll reduction within a single warp
+    if ((blockSize >=  64) && (tid < 32))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid + 32];
+    }
+
+    __syncthreads();
+
+    if ((blockSize >=  32) && (tid < 16))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid + 16];
+    }
+
+    __syncthreads();
+
+    if ((blockSize >=  16) && (tid <  8))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid +  8];
+    }
+
+    __syncthreads();
+
+    if ((blockSize >=   8) && (tid <  4))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid +  4];
+    }
+
+    __syncthreads();
+
+    if ((blockSize >=   4) && (tid <  2))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid +  2];
+    }
+
+    __syncthreads();
+
+    if ((blockSize >=   2) && ( tid <  1))
+    {
+        sdata[tid] = mySum = mySum + sdata[tid +  1];
+    }
+
+    __syncthreads();
+#endif
+
+    // write result for this block to global mem
+    if (tid == 0) d_norm[0] = sqrt(mySum/2);
+    __syncthreads();
+    tid = blockDim.x * blockIdx.x + threadIdx.x;
+    float temp_val = d_norm[0];
+    while(tid < dim){
+        d_vec[tid] /= temp_val;
+        tid += blockDim.x*gridDim.x;
+    }
+
+}
+
 void matvec(const CUDPPHandle scanplan, float *d_NNZ_values, float *d_vec, unsigned *d_indices, unsigned *d_rindices, unsigned *d_flags, float* d_scanned_vec, float* d_expanded_vec,int NNZ, int dim){
     
     int threadsPerBlock = 256;
@@ -233,7 +395,7 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec){
     int dim = h_matrix->rows;
     float *h_expanded_vec = (float *)malloc(sizeof(unsigned)*NNZ);
     float *h_scanned_vec = (float *)malloc(sizeof(unsigned)*NNZ);
-    float *d_NNZ_values,*d_vec, *d_expanded_vec,*d_scanned_vec, *d_norm, *d_temp_vec;
+    float *d_NNZ_values,*d_vec, *d_expanded_vec,*d_scanned_vec, *d_norm;
     unsigned *d_indices,*d_flags,*d_rindices;
     
     /*Copy stuff from host matrix to device */
@@ -248,7 +410,6 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec){
 
     /* Stuff for matvec operation */
     cudaMalloc((void **)&d_vec, sizeof(float)*dim);
-    cudaMalloc((void **)&d_temp_vec, sizeof(float)*dim);
     cudaMalloc((void **)&d_expanded_vec, sizeof(float)*NNZ);
     cudaMalloc((void **)&d_scanned_vec, sizeof(float)*NNZ);
     cudaMalloc((void **)&d_norm, sizeof(float));
@@ -288,7 +449,7 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec){
     */
     for(int count = 0; count < 20; count++){
         matvec(scanplan,d_NNZ_values, d_vec, d_indices, d_rindices, d_flags, d_scanned_vec,d_expanded_vec,NNZ,dim);
-        cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
+        //cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
         /*
         printf("Vector after matvec ---------------------\n");  
         for (int i = 0; i < dim; ++i){
@@ -296,7 +457,8 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec){
         }
         printf("---------------------\n"); 
         */
-        reduce6<float, 256, true><<< dimGrid, dimBlock, smemSize >>>(d_vec, d_temp_vec, dim);
+        reduce6<float, 256, true><<< dimGrid, dimBlock, smemSize >>>(d_vec, d_norm, dim);
+        //power_iteration<<< dimGrid, dimBlock, smemSize >>>(d_NNZ_values,d_vec, d_indices, d_rindices, d_expanded_vec,d_norm,NNZ,dim, true ,256);
         cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
         printf("Vector after normalizing---------------------\n");  
         for (int i = 0; i < dim; ++i){
@@ -344,7 +506,6 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec){
     cudaFree(d_indices);
     cudaFree(d_rindices);
     cudaFree(d_vec);
-    cudaFree(d_temp_vec);
     cudaFree(d_flags);
     cudaFree(d_norm);
     cudaFree(d_expanded_vec);
