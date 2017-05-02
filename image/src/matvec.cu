@@ -31,18 +31,19 @@ __global__ void diag_matvec_cuda(
 {
 
     float temp;
+    temp = 0;
 
     int row = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (row < n) {
         for (int i=0; i < ndiags; i++) {
             if (d_offset[i] + row < n && d_offset[i] + row >= 0) {
-                temp += d_mat[ i*n + row ] * d_vec[ d_offset[i] + row];
+                temp += d_mat[ i*n + row ] * d_vec[ row + d_offset[i] ];
             }
         }
+        d_vecout[row] = temp;
     }
 
-    d_vecout[row] = temp;
 }
 
 float * diag_matvec(

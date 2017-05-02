@@ -39,6 +39,27 @@ diag_mat * diag_alloc(
     int height);
 
 /**
+ * @brief Extract square root of main diagonal
+ *
+ * @param mat Matrix to extract diagonal from
+ *
+ * @return Square root of diagonal entries
+ */
+diag_mat * diag_sqrt(
+    diag_mat * mat);
+
+
+/**
+ * @brief Extract inverse square root of main diagonal
+ *
+ * @param mat Matrix to extract diagonal from
+ *
+ * @return Diagonal matrix containing square root of main diagonal in original matrix
+ */
+diag_mat * diag_inv_sqrt(
+    diag_mat * mat);
+
+/**
  * @brief Free memory from diag matrix
  *
  * @param mat Matrix to free

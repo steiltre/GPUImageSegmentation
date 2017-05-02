@@ -222,14 +222,14 @@ diag_mat * create_weight_diag(
   ndiags = 2 * eff_radius * eff_radius + 2 * eff_radius + 1;  /* Solve recurrence for number of neighbors within L^1 distance radius to get this */
 
   /* Create sparse matrix assuming all pixels have 4 * radius^2 neighbors (overestimate, may want to fix later) */
-  diag_mat * wgt = diag_alloc( image->height * image->width * (2*radius+1) * (2*radius+1), ndiags, image->width, image->height );
+  diag_mat * wgt = diag_alloc( image->height * image->width * (2*radius+1) * (2*radius+1), ndiags, image->width*image->height, image->width*image->height );
 
   /* Need to calculate variances */
   float avg_bright = 0;
-  float var_bright;
+  float var_bright = 0;
   float avg_x = (image->width-1)/2;
   float avg_y = (image->height-1)/2;
-  float var_space;
+  float var_space = 0;
 
   for (int i=0; i<image->height; i++) {
     for (int j=0; j<image->width; j++) {
@@ -253,7 +253,7 @@ diag_mat * create_weight_diag(
   unsigned ind = 0;
   for (int i=-1*eff_radius; i<=eff_radius; i++) {
     for (int j = abs(i)-eff_radius; j <= eff_radius - abs(i); j++) {
-      wgt->offset[ind++] = i * wgt->width + j;
+      wgt->offset[ind++] = i * image->width + j;
     }
   }
 
@@ -271,17 +271,18 @@ diag_mat * create_weight_diag(
 
           if (i+row_disp >= 0 && i+row_disp < image->height && j+col_disp >= 0 && j+col_disp < image->width) {  /* Neighbor pixel is inside image */
             if ( row_disp != 0 || col_disp != 0 ) {  /* Handle pixel as its own neighbor separately */
-              wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = -1 * exp( -1 * dist2/var_space - ( brightness - image->red[(i+row_disp)*image->width + j+col_disp] ) * (brightness - image->red[(i+row_disp)*image->width + j+col_disp] )/var_bright );
+              wgt->vals[ind*wgt->width + i*image->width + j] = -1 * exp( -1 * dist2/var_space - ( brightness - image->red[(i+row_disp)*image->width + j+col_disp] ) * (brightness - image->red[(i+row_disp)*image->width + j+col_disp] )/var_bright );
               //wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = (i+row_disp)*image->width + j+col_disp;
               wgt->nnz += 1;
             }
             else {
-              wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = 1;  /* Placeholder for sum of off-diagonals */
+              wgt->vals[ind*wgt->width + i*image->width + j] = 1;  /* Placeholder for sum of off-diagonals */
               wgt->nnz += 1;
             }
           }
           else {  /* Neighbor pixel outside of image */
-            wgt->vals[ind*wgt->width*wgt->height + i*wgt->width + j] = 0;
+            wgt->vals[ind*wgt->width + i*image->width + j] = 0;
+            wgt->nnz += 1;  /* Increase count even though values stored are zero */
           }
 
           ind++;
@@ -297,14 +298,14 @@ diag_mat * create_weight_diag(
     for (int j=0; j<image->width; j++) {
       sum = 0;
       for (int k=0; k<ndiags; k++) {  /* Compute row sum */
-        if ( k != (k-1)/2) {  /* Don't include 1's on main diagonal */
-          sum += wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j];
+        if ( k != (ndiags-1)/2) {  /* Don't include 1's on main diagonal */
+          sum += wgt->vals[k*wgt->width + i*image->width + j];
         }
       }
 
       for (int k=0; k<ndiags; k++) {  /* Normalize*/
-        if ( (k-1)/2 ) {  /* Change diagonal to sum of off diagonals */
-          wgt->vals[k*wgt->width*wgt->height + i*wgt->width + j] = -1 * sum;
+        if ( k == (ndiags-1)/2 ) {  /* Change diagonal to sum of off diagonals */
+          wgt->vals[k*wgt->width + i*image->width + j] = -1 * sum;
         }
       }
     }
