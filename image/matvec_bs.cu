@@ -198,39 +198,61 @@ __global__ void power_iteration(float *d_NNZ_values, float *d_vec, unsigned *d_i
  */
 int main(int argc, char* argv[])
 {
-    int dim = atoi(argv[1]),NNZ = dim;
+    int dim = 4,NNZ = 12;
     // Allocate the host Arrays
 
     csr_mat *h_matrix = csr_alloc(NNZ,dim);
-    
-    float *h_vec = (float *)malloc(sizeof(unsigned)*dim);
-
-    // Allocate the host output vector C
-
-    // Initialize the host input vectors
-    for (int i = 0; i < dim; ++i){
-        h_vec[i] = 1;
-        //printf("%f\n",h_vec[i]);
-        h_matrix->ptr[i] = i;
-    }
-    h_matrix->ptr[dim] = dim;
-    for (int i = 0; i < dim; ++i){
-        h_matrix->vals[i] = i+1;
-        h_matrix->cols[i] = i;
-        h_matrix->flags[i] = 1;
-    }
+    float NNZ_vals[12] = {3,-1,-1,-1,-1,2,-1,-1,-1,2,-1,1};
+    unsigned cols[12] = {0,1,2,3,0,1,2,0,1,2,0,3};
+    unsigned rows[5] = {0,4,7,10,12};
+    //unsigned h_scan_ind[6] = {0,3,3,3,6,3};
+    unsigned h_scan_ind[8];
+    unsigned flags[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
+    float h_vec[4] = {1,0,0,0};
+    float h_diag[4]={3,2,2,1};
 /*
+    float *h_vec = (float *)malloc(sizeof(unsigned)*dim);
+    unsigned *h_scan_ind = (unsigned *)malloc(sizeof(unsigned)*2*dim);
+    // Allocate the host output vector C
+*/
+    // Initialize the host input vectors
+    int j = 0,count = 1;
+    h_scan_ind[2*j] = 0;
+    for(int i = 1; i < NNZ; i++){
+        if(cols[i] < cols[i-1]){
+            h_scan_ind[2*j+1] = count;
+            count = 0;
+            j++; 
+            h_scan_ind[2*j] = i;
+        }
+        count++;
+    }
+    h_scan_ind[2*j+1] = count;
+    for(int i = 0; i < 8; i++){
+        printf("scan_ind[%d] = %d\n", i,h_scan_ind[i]);
+    }
+    for (int i = 0; i <= dim; ++i){
+        //printf("%f\n",h_vec[i]);
+        h_matrix->ptr[i] = rows[i];
+    }
+    for (int i = 0; i < NNZ; ++i){
+        h_matrix->vals[i] = NNZ_vals[i];
+        h_matrix->cols[i] = cols[i];
+        h_matrix->flags[i] = flags[i];
+    }
+
     for (int i = 0; i < NNZ; ++i){
         printf("%d :: %d :: %f :: %d\n",h_matrix->ptr[i],h_matrix->cols[i],h_matrix->vals[i],h_matrix->flags[i]);
     }
-*/
+
     printf("Done setting up Host arrays\n");
     // Allocate the device arrays
-    eigenvalue_solver(h_matrix,h_vec);
+    eigenvalue_solver(h_matrix,h_vec, h_scan_ind,h_diag);
     // Free host memory
     csr_free(h_matrix);
 
-    free(h_vec);
+    //free(h_vec);
+    //free(h_scan_ind);
 
     return 0;
 }
