@@ -3,3 +3,5 @@
 
 # Exclude test binaries
 */test
+
+*.o

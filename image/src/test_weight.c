@@ -20,7 +20,8 @@ int main(
     }
   }
 
-  csr_mat * wgt = create_weight_csr(im, 3);
+  csr_mat * diag = csr_alloc(im->width * im->height, im->width * im->height);
+  csr_mat * wgt = create_weight_csr(im, 3, diag);
 
   diag_mat * wgt_diag = create_weight_diag(im, 2);
 
@@ -29,7 +30,8 @@ int main(
   image_t * im2 = image_load("karypis.bmp");
   image_t * gray = grayscale(im);
 
-  csr_mat * wgt2 = create_weight_csr(im2, 2.5);
+  csr_mat * diag2 = csr_alloc(im2->height * im2->width, im2->height * im2->width);
+  csr_mat * wgt2 = create_weight_csr(im2, 2.5, diag2);
 
   /* Test matrix multiplication */
   diag_mat * mat = diag_alloc(20, 2, 10, 10);
