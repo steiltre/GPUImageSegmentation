@@ -11,6 +11,6 @@
     required for reduction kernel
 */
 
-extern "C" void eigenvalue_solver(csr_mat *h_matrix, float *h_vec);
+extern "C" void eigenvalue_solver(csr_mat *h_matrix, float *h_vec,unsigned *h_scan_ind,float *h_diag);
 
 #endif
