@@ -164,7 +164,7 @@ csr_mat * create_weight_csr(
 
           float dist2 = (row-i)*(row-i) + (col-j)*(col-j);
 
-          if (dist2 <= radius*radius && row>=0 && row<image->height && col>=0 && col<image->width) {
+          if (abs(row-i)+abs(col-j) <= radius && abs(row-i)+abs(col-j) <= radius && row>=0 && row<image->height && col>=0 && col<image->width) {
             if (row != i || col != j) {
               wgt->vals[ind] = -1 * exp( -1 * dist2/var_space - ( brightness - image->red[row*image->width + col] ) * (brightness - image->red[row*image->width + col] )/var_bright );
               //wgt->vals[ind] = -1 * exp( -1 * ( brightness - image->red[row*image->width + col] ) * (brightness - image->red[row*image->width + col] )/var_bright );
