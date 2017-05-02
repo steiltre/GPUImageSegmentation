@@ -3,11 +3,11 @@
 #include <stdio.h>
 
 
-#include "power_iteration.cuh"
-
-#define NUM_THREAD 4
-#define NUM_BLOCK 1
-
+extern "C"{
+    #include "power_iteration.h"
+}
+#define NUM_THREAD 256
+#define NUM_BLOCK 256
 __global__ void
 reduce(float *g_idata, float *g_odata, unsigned int n){
 
@@ -81,8 +81,8 @@ __global__ void mat_vec(float *d_NNZ_values, float *d_vec, unsigned *d_indices, 
     if(i == 0){
         scalar_prod<<< NUM_BLOCK, NUM_THREAD>>>(d_vec, d_evec, d_norm, dim);
         //reduce<<< NUM_BLOCK, NUM_THREAD>>>(d_vec, d_norm, dim);
-        cudaDeviceSynchronize();
-        printf("scalar product = %f\n",d_norm[0]);
+        //cudaDeviceSynchronize();
+        //printf("scalar product = %f\n",d_norm[0]);
     }
     cudaDeviceSynchronize();
     while(i < NNZ){
@@ -126,21 +126,35 @@ __global__ void mat_vec(float *d_NNZ_values, float *d_vec, unsigned *d_indices, 
     i = blockDim.x * blockIdx.x + threadIdx.x;
     if(i == 0){
       normalize_vector<<< NUM_BLOCK, NUM_THREAD>>>(d_vec, d_norm, dim);
+      /*
       scalar_prod<<< NUM_BLOCK, NUM_THREAD>>>(d_vec, d_projvec, d_norm, dim);
       printf("Eigenvalue seems to be: %f\n",2-d_norm[0]);
+      */
     }
     
  
 }
 
-void eigenvalue_solver(csr_mat *h_matrix, float *h_vec, unsigned *h_scan_ind, float *h_diag){
+void eigenvalue_solver(csr_mat *h_matrix, float *h_vec, float *h_diag){
  
     cudaEvent_t start, stop;
     float elapsedTime;
     int NNZ = h_matrix->nnz;
     int dim = h_matrix->rows;
-    float *h_expanded_vec = (float *)malloc(sizeof(unsigned)*NNZ);
-    float *h_scanned_vec = (float *)malloc(sizeof(unsigned)*NNZ);
+
+    int j = 0,count = 1;
+    h_matrix->flags[2*j]= 0;
+    for(int i = 1; i < NNZ; i++){
+        if(h_matrix->cols[i] < h_matrix->cols[i-1]){
+            h_matrix->flags[2*j+1] = count;
+            count = 0;
+            j++; 
+            h_matrix->flags[2*j] = i;
+        }
+        count++;
+    }
+    h_matrix->flags[2*j+1] = count;
+
     float *d_NNZ_values,*d_vec, *d_evec, *d_expanded_vec,*d_scanned_vec, *d_projvec, *d_norm, *d_diag;
     unsigned *d_indices,*d_flags,*d_rindices,*d_scan_ind;
     
@@ -154,7 +168,7 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec, unsigned *h_scan_ind, fl
     cudaMemcpy(d_indices, h_matrix->cols, sizeof(unsigned)*NNZ, cudaMemcpyHostToDevice);
     cudaMemcpy(d_rindices, h_matrix->ptr, sizeof(unsigned)*(dim+1), cudaMemcpyHostToDevice);
     cudaMemcpy(d_flags, h_matrix->flags, sizeof(unsigned)*NNZ, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_scan_ind, h_scan_ind, sizeof(unsigned)*2*dim, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_scan_ind, h_matrix->flags, sizeof(unsigned)*2*dim, cudaMemcpyHostToDevice);
     /* Stuff for matvec operation */
     cudaMalloc((void **)&d_vec, sizeof(float)*dim);
     cudaMalloc((void **)&d_evec, sizeof(float)*dim);
@@ -201,15 +215,14 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec, unsigned *h_scan_ind, fl
         printf("---------------------\n");
         */
         // Used to see vector after each iteration
-        
+        /*
         cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
         printf("Vector after iteration %d\n",count);  
         for (int i = 0; i < dim; ++i){
             printf("%f\n",h_vec[i]);
         }
         printf("---------------------\n");
-        
-        
+        */
     }
     cudaEventCreate(&stop);
     cudaEventRecord(stop,0);
@@ -217,12 +230,9 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec, unsigned *h_scan_ind, fl
     cudaEventElapsedTime(&elapsedTime, start,stop);
     printf("Elapsed time : %f ms\n" ,elapsedTime);
     printf("Looks to be %f GFlops\n",((2*NNZ)*3*0.000001)/(elapsedTime));
+    cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
     // Copy the device result vector in device memory to the host result vector
     // in host memory.
-    cudaMemcpy(h_scanned_vec, d_scanned_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_expanded_vec, d_expanded_vec, NNZ*sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_vec, d_vec, dim*sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(d_vec, h_vec, sizeof(unsigned)*dim, cudaMemcpyHostToDevice);
 
     /*
     printf("h_vec after matvec\n");
@@ -257,7 +267,5 @@ void eigenvalue_solver(csr_mat *h_matrix, float *h_vec, unsigned *h_scan_ind, fl
     cudaFree(d_expanded_vec);
     cudaFree(d_scanned_vec);  
     cudaFree(d_scan_ind);
-
-    free(h_expanded_vec);
-    free(h_scanned_vec);  
+ 
 }

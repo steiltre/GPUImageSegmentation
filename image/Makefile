@@ -13,8 +13,10 @@ CFLAGS += \
 CUDA_FLAGS += \
 		 -O3 \
     -Wno-deprecated-gpu-targets \
-	-arch=sm_52 \
-	-lineinfo
+	-arch=sm_35 \
+	-lineinfo \
+        -rdc=true \
+        -lcudadevrt
 
 LD_FLAGS += -lm -lgomp
 

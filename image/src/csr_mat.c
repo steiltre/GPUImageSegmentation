@@ -13,7 +13,7 @@ csr_mat * csr_alloc(
   csr->ptr = malloc( (rows+1) * sizeof(*(csr->ptr)) );
   csr->cols = malloc( max_nnz * sizeof(*(csr->cols)) );
   csr->vals = malloc( max_nnz * sizeof(*(csr->vals)) );
-  csr->flags = malloc( max_nnz * sizeof(*(csr->flags)) );
+  csr->flags = malloc( (rows*2) * sizeof(*(csr->flags)) );
   csr->nnz = max_nnz;
   csr->rows = rows;
   csr->max_nnz = 0;

@@ -4,9 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "power_iteration.h"
 #include "image.h"
 #include "image_segmentation.h"
 #include "diag_mat.h"
+
+
+
 
 int main(
     int argc,
@@ -22,14 +26,38 @@ int main(
   image_t * gray = grayscale(im);
 
   diag_mat * wgt_diag = create_weight_diag(gray, atoi(argv[2]) );
+	
+  int dim = im->height * im->width;
+  csr_mat *diag_csr = csr_alloc(dim,dim);
+  csr_mat *wgt_csr = create_weight_csr(gray,atoi(argv[2]),diag_csr);
+ 
+  float * h_vec = malloc(sizeof(float)*dim);
+  int i;
+  for(i = 0 ; i < dim; i++){
+	h_vec[i] = 1;
+  }
+  eigenvalue_solver(wgt_csr,h_vec,wgt_diag->vals);
+
+  
 
   float * seg_vec = segmentation(wgt_diag);
+  
 
   image_t *out_im1 = image_alloc(gray->width, gray->height);
   image_t *out_im2 = image_alloc(gray->width, gray->height);
 
+  image_t *out_im3 = image_alloc(gray->width, gray->height);
+  image_t *out_im4 = image_alloc(gray->width, gray->height);	
+
   apply_segmentation( gray, seg_vec, out_im1, out_im2 );
+
+  apply_segmentation( gray, h_vec, out_im3, out_im4 );
 
   image_write_bmp("seg1.bmp", out_im1);
   image_write_bmp("seg2.bmp", out_im2);
+
+  image_write_bmp("seg3.bmp", out_im1);
+  image_write_bmp("seg4.bmp", out_im2);
+
+ free(h_vec);
 }

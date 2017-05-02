@@ -206,8 +206,6 @@ int main(int argc, char* argv[])
     unsigned cols[12] = {0,1,2,3,0,1,2,0,1,2,0,3};
     unsigned rows[5] = {0,4,7,10,12};
     //unsigned h_scan_ind[6] = {0,3,3,3,6,3};
-    unsigned h_scan_ind[8];
-    unsigned flags[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
     float h_vec[4] = {1,0,0,0};
     float h_diag[4]={3,2,2,1};
 /*
@@ -216,21 +214,6 @@ int main(int argc, char* argv[])
     // Allocate the host output vector C
 */
     // Initialize the host input vectors
-    int j = 0,count = 1;
-    h_scan_ind[2*j] = 0;
-    for(int i = 1; i < NNZ; i++){
-        if(cols[i] < cols[i-1]){
-            h_scan_ind[2*j+1] = count;
-            count = 0;
-            j++; 
-            h_scan_ind[2*j] = i;
-        }
-        count++;
-    }
-    h_scan_ind[2*j+1] = count;
-    for(int i = 0; i < 8; i++){
-        printf("scan_ind[%d] = %d\n", i,h_scan_ind[i]);
-    }
     for (int i = 0; i <= dim; ++i){
         //printf("%f\n",h_vec[i]);
         h_matrix->ptr[i] = rows[i];
@@ -238,16 +221,20 @@ int main(int argc, char* argv[])
     for (int i = 0; i < NNZ; ++i){
         h_matrix->vals[i] = NNZ_vals[i];
         h_matrix->cols[i] = cols[i];
-        h_matrix->flags[i] = flags[i];
     }
 
     for (int i = 0; i < NNZ; ++i){
-        printf("%d :: %d :: %f :: %d\n",h_matrix->ptr[i],h_matrix->cols[i],h_matrix->vals[i],h_matrix->flags[i]);
+        //printf("%d :: %d :: %f\n",h_matrix->ptr[i],h_matrix->cols[i],h_matrix->vals[i]);
     }
 
     printf("Done setting up Host arrays\n");
     // Allocate the device arrays
-    eigenvalue_solver(h_matrix,h_vec, h_scan_ind,h_diag);
+    eigenvalue_solver(h_matrix,h_vec,h_diag);
+    printf("Eigenvector\n");  
+    for (int i = 0; i < dim; ++i){
+        printf("%f\n",h_vec[i]);
+    }
+    printf("---------------------\n");
     // Free host memory
     csr_free(h_matrix);
 
