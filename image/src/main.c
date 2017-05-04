@@ -27,17 +27,20 @@ int main(
 
   diag_mat * wgt_diag = create_weight_diag(gray, atoi(argv[2]) );
 	
+ 
   int dim = im->height * im->width;
   csr_mat *diag_csr = csr_alloc(dim,dim);
   csr_mat *wgt_csr = create_weight_csr(gray,atoi(argv[2]),diag_csr);
  
   float * h_vec = malloc(sizeof(float)*dim);
   int i;
+  printf("In main with dim = %d\n",dim);
   for(i = 0 ; i < dim; i++){
 	h_vec[i] = 1;
   }
-  eigenvalue_solver(wgt_csr,h_vec,wgt_diag->vals);
 
+ 
+  eigenvalue_solver(wgt_csr,h_vec,diag_csr->vals);
   
 
   float * seg_vec = segmentation(wgt_diag);
@@ -53,11 +56,21 @@ int main(
 
   apply_segmentation( gray, h_vec, out_im3, out_im4 );
 
+  /*
+  printf("Testing signs\n");
+  for(i = 0; i < dim; i++){
+    printf("%f - %f\n",seg_vec[i],h_vec[i]);
+    if(seg_vec[i]*h_vec[i] <= 0){
+      printf("Sign mismatch at %d\n",i);
+    }
+  }
+  */
+
   image_write_bmp("seg1.bmp", out_im1);
   image_write_bmp("seg2.bmp", out_im2);
 
-  image_write_bmp("seg3.bmp", out_im1);
-  image_write_bmp("seg4.bmp", out_im2);
+  image_write_bmp("seg3.bmp", out_im3);
+  image_write_bmp("seg4.bmp", out_im4);
 
  free(h_vec);
 }
