@@ -36,10 +36,14 @@ int main(
   int i;
   printf("In main with dim = %d\n",dim);
   for(i = 0 ; i < dim; i++){
-	h_vec[i] = 1;
-  }
-
- 
+	 
+     if(i%2 == 0){
+        h_vec[i] = 1;
+     }
+     else{
+        h_vec[i] = 0;
+     }
+  } 
   eigenvalue_solver(wgt_csr,h_vec,diag_csr->vals);
   
 
@@ -55,16 +59,6 @@ int main(
   apply_segmentation( gray, seg_vec, out_im1, out_im2 );
 
   apply_segmentation( gray, h_vec, out_im3, out_im4 );
-
-  /*
-  printf("Testing signs\n");
-  for(i = 0; i < dim; i++){
-    printf("%f - %f\n",seg_vec[i],h_vec[i]);
-    if(seg_vec[i]*h_vec[i] <= 0){
-      printf("Sign mismatch at %d\n",i);
-    }
-  }
-  */
 
   image_write_bmp("seg1.bmp", out_im1);
   image_write_bmp("seg2.bmp", out_im2);
